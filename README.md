@@ -81,16 +81,20 @@ REPORTS_FOLDER_ID=your-folder-id
 ├── src/
 │   ├── pdf_processor.py      # PDF text extraction
 │   ├── translator.py         # Translation handling
-│   ├── search.py            # Vessel name search
-│   ├── spreadsheet.py       # Google Sheets integration
-│   └── config.py            # Configuration management
-├── tests/                   # Test files
-├── .env                     # Environment variables (not in git)
-├── requirements.txt         # Project dependencies
-└── README.md               # This file
+│   ├── search.py             # Vessel name search
+│   ├── csv_processor.py      # CSV handling
+│   ├── search_vessels.py     # Standalone search script
+│   ├── spreadsheet.py        # Google Sheets integration
+│   └── config.py             # Configuration management
+├── tests/                    # Test files
+├── .env                      # Environment variables (not in git)
+├── requirements.txt          # Project dependencies
+└── README.md                 # This file
 ```
 
 ## Usage
+
+### Full Processing Pipeline
 
 1. Place PDF files in the `input_pdfs` directory
 2. Run the setup validator:
@@ -104,6 +108,28 @@ python src/main.py
 ```
 
 4. Check the `translated_pdfs` directory for results and `logs` for processing details
+
+### Vessel Search Only
+
+If you already have translated files and just want to search for vessel names:
+
+1. Place your vessel CSV file in `input_data/fishing-vessels.csv`
+2. Make sure your translated files are in the `translated_pdfs` directory
+3. Run the search script:
+```bash
+./search_vessels.sh
+```
+
+Or with custom options:
+```bash
+./search_vessels.sh --input-csv path/to/vessels.csv --translated-dir path/to/files --output-csv path/to/output.csv
+```
+
+Available options:
+- `--input-csv`: Path to the input vessel CSV file (default: input_data/fishing-vessels.csv)
+- `--translated-dir`: Directory containing translated files (default: translated_pdfs)
+- `--output-csv`: Path to save the updated CSV file (default: output_data/fishing-vessels-updated.csv)
+- `--threshold`: Fuzzy matching threshold (0-100, default: 85)
 
 ## Security Notes
 

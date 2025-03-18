@@ -9,7 +9,7 @@ from config import Config
 from pdf_processor import PDFProcessor
 from translator import Translator
 from search import VesselSearch
-from spreadsheet import SpreadsheetManager
+from csv_processor import CSVProcessor
 from setup_validator import SetupValidator
 from auth import AuthenticationError
 
@@ -25,7 +25,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class DocumentProcessor:
-    def __init__(self):
+    def __init__(self, csv_path: str):
         """Initialize all components"""
         try:
             # Validate setup first
@@ -37,7 +37,7 @@ class DocumentProcessor:
             self.pdf_processor = PDFProcessor()
             self.translator = Translator()
             self.vessel_search = VesselSearch()
-            self.spreadsheet = SpreadsheetManager(Config.VESSEL_SPREADSHEET_ID)
+            self.csv_processor = CSVProcessor(csv_path)
             
         except AuthenticationError as e:
             logger.error(f"Authentication failed: {str(e)}")
@@ -46,16 +46,16 @@ class DocumentProcessor:
             logger.error(f"Initialization failed: {str(e)}")
             raise
 
-    def process_document(self, pdf_path: str, output_path: str) -> Dict[int, List]:
+    def process_document(self, pdf_path: str, output_path: str) -> str:
         """
-        Process a single document: extract text, translate, and search
+        Process a single document: extract text, translate, and save
         
         Args:
             pdf_path: Path to the PDF file
-            output_path: Path to save the translated PDF
+            output_path: Path to save the translated text
             
         Returns:
-            Dictionary of matches by page
+            Path to the translated text file
         """
         try:
             # Extract text
@@ -64,7 +64,7 @@ class DocumentProcessor:
             
             if not text_by_page:
                 logger.warning(f"No text extracted from {pdf_path}")
-                return {}
+                return None
             
             # Translate
             logger.info("Translating document")
@@ -72,21 +72,11 @@ class DocumentProcessor:
             
             # Save translated text
             self._save_translation(translated_pages, output_path)
-            
-            # Get vessel names from spreadsheet
-            try:
-                vessel_names = self.spreadsheet.read_vessel_names('Vessels!A2:A')
-            except Exception as e:
-                logger.error(f"Failed to read vessel names: {str(e)}")
-                return {}
-            
-            # Search for matches
-            logger.info("Searching for vessel matches")
-            return self.vessel_search.search_document(translated_pages, vessel_names)
+            return output_path
             
         except Exception as e:
             logger.error(f"Error processing document {pdf_path}: {str(e)}")
-            return {}
+            return None
 
     def _save_translation(self, translated_pages: Dict[int, str], output_path: str):
         """Save translated text to file"""
@@ -106,7 +96,9 @@ def main():
         # Create logs directory if it doesn't exist
         os.makedirs('logs', exist_ok=True)
         
-        processor = DocumentProcessor()
+        # Initialize processor with CSV file
+        csv_path = 'input_data/fishing-vessels.csv'
+        processor = DocumentProcessor(csv_path)
         
         # Process all PDFs in the input directory
         input_dir = "input_pdfs"
@@ -117,27 +109,34 @@ def main():
             logger.warning(f"No PDF files found in {input_dir}")
             return
         
-        results = {}
+        # Process and translate PDFs
         failed_files = []
-        
         for pdf_file in tqdm(pdf_files, desc="Processing documents"):
             try:
-                output_path = Path(output_dir) / f"translated_{pdf_file.name}"
-                matches = processor.process_document(str(pdf_file), str(output_path))
-                
-                if matches:
-                    results[pdf_file.name] = matches
-                else:
-                    logger.warning(f"No matches found in {pdf_file.name}")
+                output_path = Path(output_dir) / f"translated_{pdf_file.name}.txt"
+                if processor.process_document(str(pdf_file), str(output_path)) is None:
+                    failed_files.append(pdf_file.name)
             
             except Exception as e:
                 logger.error(f"Failed to process {pdf_file.name}: {str(e)}")
                 failed_files.append(pdf_file.name)
         
+        # Search for vessel names in translated files
+        logger.info("Searching for vessel matches...")
+        vessel_names = processor.csv_processor.get_vessel_names()
+        matches = processor.vessel_search.search_translated_files(output_dir, vessel_names)
+        
+        # Update CSV with matches
+        if matches:
+            logger.info(f"Found matches for {len(matches)} vessels")
+            processor.csv_processor.update_matches(matches)
+        else:
+            logger.warning("No vessel matches found in any document")
+        
         # Report results
         logger.info(f"\nProcessing complete:")
         logger.info(f"- Successfully processed: {len(pdf_files) - len(failed_files)} files")
-        logger.info(f"- Files with matches: {len(results)}")
+        logger.info(f"- Vessels with matches: {len(matches)}")
         logger.info(f"- Failed files: {len(failed_files)}")
         
         if failed_files:
